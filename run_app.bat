@@ -1,0 +1,6 @@
+@echo off
+echo Installing Flutter dependencies...
+flutter pub get
+
+echo Running the app...
+flutter run -d windows
