@@ -1,8 +1,11 @@
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+// shop_model.dart
+import 'package:Maps_flutter/Maps_flutter.dart'; // แก้ไขจาก Maps_flutter
+import 'package:flutter/foundation.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart'; // เพิ่มการ import สำหรับ debugPrint
 
 class Shop {
-  final String id;
-  final String sellerId;
+  final int? id; // Changed from String to int?
+  final int sellerId; // Changed from String to int
   final String name;
   final String description;
   final String address;
@@ -26,8 +29,8 @@ class Shop {
   final DateTime updatedAt;
 
   Shop({
-    required this.id,
-    required this.sellerId,
+    this.id, // Changed from required this.id to this.id
+    required this.sellerId, // Changed from String to int
     required this.name,
     required this.description,
     required this.address,
@@ -84,33 +87,29 @@ class Shop {
   // Create a Shop from a Map
   factory Shop.fromMap(Map<String, dynamic> map) {
     return Shop(
-      id: map['id'].toString(),
-      sellerId: map['sellerId'].toString(),
-      name: map['name'] ?? 'ร้านค้า',
-      description: map['description'] ?? '',
-      address: map['address'] ?? '',
-      province: map['province'] ?? '',
-      district: map['district'],
-      subdistrict: map['subdistrict'],
-      postalCode: map['postalCode'],
-      latitude: map['latitude']?.toDouble(),
-      longitude: map['longitude']?.toDouble(),
-      phone: map['phone'] ?? '',
-      email: map['email'],
-      logo: map['logo'],
-      coverImage: map['coverImage'],
-      openTime: map['openTime'],
-      closeTime: map['closeTime'],
-      isOpen: map['isOpen'] == 1 || map['isOpen'] == true,
-      isVerified: map['isVerified'] == 1 || map['isVerified'] == true,
-      rating: map['rating']?.toDouble() ?? 0.0,
-      totalRatings: map['totalRatings'] ?? 0,
-      createdAt: map['createdAt'] != null
-          ? DateTime.parse(map['createdAt'])
-          : DateTime.now(),
-      updatedAt: map['updatedAt'] != null
-          ? DateTime.parse(map['updatedAt'])
-          : DateTime.now(),
+      id: map['id'] as int?, // Changed to int?
+      sellerId: map['sellerId'] as int, // Changed to int
+      name: map['name'] as String,
+      description: map['description'] as String,
+      address: map['address'] as String,
+      province: map['province'] as String,
+      district: map['district'] as String?,
+      subdistrict: map['subdistrict'] as String?,
+      postalCode: map['postalCode'] as String?,
+      latitude: map['latitude'] as double?,
+      longitude: map['longitude'] as double?,
+      phone: map['phone'] as String,
+      email: map['email'] as String?,
+      logo: map['logo'] as String?,
+      coverImage: map['coverImage'] as String?,
+      openTime: map['openTime'] as String?,
+      closeTime: map['closeTime'] as String?,
+      isOpen: (map['isOpen'] as int) == 1,
+      isVerified: (map['isVerified'] as int) == 1,
+      rating: map['rating'] as double,
+      totalRatings: map['totalRatings'] as int,
+      createdAt: DateTime.parse(map['createdAt'] as String),
+      updatedAt: DateTime.parse(map['updatedAt'] as String),
     );
   }
 
@@ -147,11 +146,24 @@ class Shop {
       final now = DateTime.now();
       final currentTime = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       
-      // Simple time comparison (for demo purposes)
-      // In a real app, you'd want more robust time comparison
-      return currentTime.compareTo(openTime!) >= 0 && 
-             currentTime.compareTo(closeTime!) <= 0;
+      // Parse open and close times
+      final openHour = int.parse(openTime!.split(':')[0]);
+      final openMinute = int.parse(openTime!.split(':')[1]);
+      final closeHour = int.parse(closeTime!.split(':')[0]);
+      final closeMinute = int.parse(closeTime!.split(':')[1]);
+
+      final openDateTime = DateTime(now.year, now.month, now.day, openHour, openMinute);
+      final closeDateTime = DateTime(now.year, now.month, now.day, closeHour, closeMinute);
+
+      // Handle overnight closing (e.g., 22:00 - 06:00)
+      if (openDateTime.isBefore(closeDateTime)) {
+        return now.isAfter(openDateTime) && now.isBefore(closeDateTime);
+      } else {
+        // Shop closes on the next day
+        return now.isAfter(openDateTime) || now.isBefore(closeDateTime);
+      }
     } catch (e) {
+      debugPrint('Error checking shop open status: $e');
       return false;
     }
   }
