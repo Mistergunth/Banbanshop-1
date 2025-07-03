@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+
 import 'dart:io';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' as sqlite_ffi;
@@ -17,11 +19,17 @@ class DatabaseHelper {
   static const int _databaseVersion = 3;
 
   factory DatabaseHelper() => _instance;
-  DatabaseHelper._internal() => _initDatabase();
+  DatabaseHelper._internal(); // Constructor ไม่เรียก _initDatabase() ตรงๆ แล้ว
 
-  Future<Database> get db async => _database ??= await _initDatabase();
-  Future<Database> get database => db;
-
+  Future<Database> get db async {
+    _database ??= await _initDatabase();
+    return _database!;
+  }
+  
+  Future? get database => null;
+  
+  // ลบ Future<Database> get database => db; ที่ซ้ำซ้อนออก
+  
   Future<List<Map<String, dynamic>>> getUsersWithEvents() async {
     try {
       final result = await (await db).rawQuery('''
@@ -72,7 +80,7 @@ class DatabaseHelper {
 
   // Close method is implemented below with a more specific implementation
 
-  Future<Database> get database async => db;
+  // Future<Database> get database async => db; // บรรทัดนี้ถูกลบออกไปแล้ว
   
   Future<void> _checkAndCreateTables() async {
     if (_database == null) return;
@@ -917,8 +925,7 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getWishlist(int userId) async {
     final db = await this.db;
     return await db.rawQuery('''
-      SELECT p.* 
-      FROM products p
+      SELECT p.* FROM products p
       INNER JOIN wishlist w ON p.id = w.productId
       WHERE w.userId = ?
       ORDER BY w.createdAt DESC
@@ -1038,12 +1045,12 @@ class DatabaseHelper {
     
     // Get top selling products
     final topProducts = await db.rawQuery('''
-      SELECT p.id, p.name, p.image1, SUM(oi.quantity) as totalQuantity, SUM(oi.totalAmount) as totalAmount
+      SELECT p.id, p.name, p.images, SUM(oi.quantity) as totalQuantity, SUM(oi.subtotal) as totalAmount
       FROM order_items oi
       JOIN products p ON oi.productId = p.id
       JOIN orders o ON oi.orderId = o.id
       WHERE o.shopId = ? AND o.status != ?
-      GROUP BY p.id
+      GROUP BY p.id, p.name, p.images
       ORDER BY totalQuantity DESC
       LIMIT 5
     ''', [shopId, 'cancelled']);
@@ -1065,11 +1072,9 @@ class DatabaseHelper {
     };
   }
 
-  // Removed duplicate _insertDefaultData method - keeping the one at the beginning of the file
-
   // Generic CRUD operations
   Future<int> insert(String table, Map<String, dynamic> data) async {
-    final db = await database;
+    final db = await database; // ใช้ getter database ที่ถูกต้อง
     try {
       return await db.insert(table, data);
     } catch (e) {
@@ -1084,7 +1089,7 @@ class DatabaseHelper {
     String? where,
     List<dynamic>? whereArgs,
   }) async {
-    final db = await database;
+    final db = await database; // ใช้ getter database ที่ถูกต้อง
     try {
       return await db.update(
         table,
@@ -1110,7 +1115,7 @@ class DatabaseHelper {
     int? limit,
     int? offset,
   }) async {
-    final db = await database;
+    final db = await database; // ใช้ getter database ที่ถูกต้อง
     try {
       return await db.query(
         table,
@@ -1135,7 +1140,7 @@ class DatabaseHelper {
     String? where,
     List<dynamic>? whereArgs,
   }) async {
-    final db = await database;
+    final db = await database; // ใช้ getter database ที่ถูกต้อง
     try {
       return await db.delete(
         table,

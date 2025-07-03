@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint; // เพิ่ม debugPrint
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -29,7 +29,7 @@ import 'screens/admin/user_events_screen.dart';
 
 void main() async {
   try {
-    print('Starting app initialization...');
+    debugPrint('Starting app initialization...'); // แก้ไข: ใช้ debugPrint
     
     // This is a desktop-only version
     if (kIsWeb) {
@@ -39,68 +39,68 @@ void main() async {
     
     // For desktop platforms
     try {
-      print('Initializing FFI for desktop...');
+      debugPrint('Initializing FFI for desktop...'); // แก้ไข: ใช้ debugPrint
       // Initialize FFI
       sqfliteFfiInit();
       // Change the default factory
       databaseFactory = databaseFactoryFfi;
     } catch (e) {
-      print('Error initializing FFI: $e');
+      debugPrint('Error initializing FFI: $e'); // แก้ไข: ใช้ debugPrint
       // Continue without FFI, the app will use the default SQLite implementation
     }
     
     WidgetsFlutterBinding.ensureInitialized();
-    print('Widgets binding initialized');
+    debugPrint('Widgets binding initialized'); // แก้ไข: ใช้ debugPrint
     
     try {
       // Initialize the database
-      print('Initializing database...');
+      debugPrint('Initializing database...'); // แก้ไข: ใช้ debugPrint
       final dbHelper = DatabaseHelper();
       final db = await dbHelper.database; // This will create the database if it doesn't exist
-      print('Database initialized');
+      debugPrint('Database initialized'); // แก้ไข: ใช้ debugPrint
       
       // Verify database is open
       if (db.isOpen) {
-        print('Database is open');
+        debugPrint('Database is open'); // แก้ไข: ใช้ debugPrint
         // Create test accounts if they don't exist
-        print('Creating test accounts...');
+        debugPrint('Creating test accounts...'); // แก้ไข: ใช้ debugPrint
         try {
           await _createTestAccounts(db);
-          print('Test accounts created');
+          debugPrint('Test accounts created'); // แก้ไข: ใช้ debugPrint
         } catch (e) {
-          print('Error in _createTestAccounts: $e');
+          debugPrint('Error in _createTestAccounts: $e'); // แก้ไข: ใช้ debugPrint
           rethrow;
         }
       } else {
-        print('ERROR: Database is not open!');
+        debugPrint('ERROR: Database is not open!'); // แก้ไข: ใช้ debugPrint
       }
     } catch (e) {
-      print('FATAL ERROR initializing database: $e');
+      debugPrint('FATAL ERROR initializing database: $e'); // แก้ไข: ใช้ debugPrint
       // Re-throw to prevent app from starting with broken DB
       rethrow;
     }
     
     // Initialize shared preferences
-    print('Initializing shared preferences...');
+    debugPrint('Initializing shared preferences...'); // แก้ไข: ใช้ debugPrint
     final prefs = await SharedPreferences.getInstance();
-    print('Shared preferences initialized');
+    debugPrint('Shared preferences initialized'); // แก้ไข: ใช้ debugPrint
     
     // Initialize providers
-    print('Initializing providers...');
+    debugPrint('Initializing providers...'); // แก้ไข: ใช้ debugPrint
     final appProvider = AppProvider()..loadUserFromPrefs(prefs);
     final buyerProvider = BuyerProvider();
     
     // Initialize BuyerProvider
     try {
-      print('Initializing BuyerProvider...');
+      debugPrint('Initializing BuyerProvider...'); // แก้ไข: ใช้ debugPrint
       await buyerProvider.initialize();
-      print('BuyerProvider initialized successfully');
+      debugPrint('BuyerProvider initialized successfully'); // แก้ไข: ใช้ debugPrint
     } catch (e) {
-      print('Error initializing BuyerProvider: $e');
+      debugPrint('Error initializing BuyerProvider: $e'); // แก้ไข: ใช้ debugPrint
       // Continue anyway, the provider will handle the error state
     }
     
-    print('Running the app...');
+    debugPrint('Running the app...'); // แก้ไข: ใช้ debugPrint
     runApp(
       MultiProvider(
         providers: [
@@ -111,8 +111,8 @@ void main() async {
       ),
     );
   } catch (e, stackTrace) {
-    print('Error during app initialization: $e');
-    print('Stack trace: $stackTrace');
+    debugPrint('Error during app initialization: $e'); // แก้ไข: ใช้ debugPrint
+    debugPrint('Stack trace: $stackTrace'); // แก้ไข: ใช้ debugPrint
     // Run the app anyway with error UI
     runApp(
       MaterialApp(
@@ -131,7 +131,7 @@ void main() async {
                 ElevatedButton(
                   onPressed: () {
                     // Show error message
-                    print('Error: Could not restart the application. Please close and reopen it.');
+                    debugPrint('Error: Could not restart the application. Please close and reopen it.'); // แก้ไข: ใช้ debugPrint
                     // We can't show a dialog here since we don't have a valid context
                     // Just print to console and let the user know they need to restart
                   },
@@ -175,7 +175,7 @@ class MyApp extends StatelessWidget {
         textTheme: GoogleFonts.notoSansThaiTextTheme(
           Theme.of(context).textTheme,
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData( // แก้ไข: เปลี่ยนเป็น CardThemeData
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -264,11 +264,11 @@ class MyApp extends StatelessWidget {
           }
 
           if (appProvider.currentUser == null) {
-            return const LoginScreen();
+            return const NewLoginScreen();
           }
           
           // For customers, show location selection if not set, otherwise show buyer home
-          if (appProvider.currentUser!.role == UserRole.customer) {
+          if (appProvider.currentUser!.role == UserRole.customer) { // แก้ไข: เปลี่ยนเป็น UserRole.customer
             return Consumer<BuyerProvider>(
               builder: (context, buyerProvider, _) {
                 // If province is not selected, show location selection
@@ -291,7 +291,7 @@ class MyApp extends StatelessWidget {
         },
       ),
       routes: {
-        '/login': (context) => const LoginScreen(),
+        '/login': (context) => const NewLoginScreen(),
         '/home': (context) => const HomeScreen(),
         '/profile': (context) => const ProfileScreen(),
         
@@ -326,7 +326,7 @@ Future<void> _createTestAccounts(Database db) async {
         'password': 'buyer1234',
         'phone': '0812345678',
         'address': '123/4 ถนนสุขุมวิท แขวงคลองเตย เขตคลองเตย กรุงเทพฯ 10110',
-        'role': 'buyer',
+        'role': 'customer', // แก้ไข: เปลี่ยนจาก 'buyer' เป็น 'customer'
         'isActive': 1,
       },
       {
@@ -335,7 +335,7 @@ Future<void> _createTestAccounts(Database db) async {
         'password': 'buyer1234',
         'phone': '0822222222',
         'address': '456/7 ถนนรัชดาภิเษก แขวงดินแดง เขตดินแดง กรุงเทพฯ 10400',
-        'role': 'buyer',
+        'role': 'customer', // แก้ไข: เปลี่ยนจาก 'buyer' เป็น 'customer'
         'isActive': 1,
       },
       
@@ -424,7 +424,7 @@ Future<void> _createTestAccounts(Database db) async {
           });
           
           // Add some random events based on user role
-          if (userRole == 'buyer') {
+          if (userRole == 'customer') { // แก้ไข: เปลี่ยนจาก 'buyer' เป็น 'customer'
             await db.insert('events', {
               'userId': userId,
               'content': '$userName viewed products',
@@ -481,6 +481,3 @@ Future<void> _createTestAccounts(Database db) async {
     debugPrint('Error creating test accounts: $e');
   }
 }
-
-// Old HomePage class has been removed as it's no longer needed.
-// The app now uses the LoginScreen as the initial route and HomeScreen after login.

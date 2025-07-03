@@ -88,7 +88,7 @@ class SellerProfile {
   }
 
   // Create a copy of the SellerProfile with some updated fields
-  SellerProfile copyWith({
+  SellerProfile copyWithFull({
     String? fullName,
     String? email,
     String? phoneNumber,
