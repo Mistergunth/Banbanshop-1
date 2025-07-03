@@ -1,745 +1,333 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart' as path;
+import 'package:Maps_flutter/Maps_flutter.dart';
+import 'package:geocoding/geocoding.dart' as app_location;
+import 'package:shared_preferences/shared_preferences.dart'; // เพิ่ม SharedPreferences
+// import 'package:sqflite/sqflite.dart'; // ไม่จำเป็นต้อง import database ที่นี่โดยตรง
+// import 'package:path/path.dart' as path; // ไม่จำเป็นต้อง import path ที่นี่โดยตรง
 
 import '../models/product_model.dart';
 import '../models/category_model.dart';
 import '../models/shop_model.dart';
-import '../models/location_model.dart';
+import '../models/location_model.dart' as app_location; // Alias เพื่อหลีกเลี่ยงการชนกับ Maps_flutter.LatLng
 import '../models/user_model.dart';
 import '../models/address_model.dart';
-import '../models/location_model.dart';
-import '../database/database_helper.dart';
+import '../database/database_helper.dart'; // DatabaseHelper อาจจะไม่ถูกเรียกใช้โดยตรงถ้าผ่าน Repository
+import '../database/repository.dart'; // Import Repository
 
 class BuyerProvider with ChangeNotifier {
-  final DatabaseHelper _databaseHelper;
+  final Repository _repository; // ใช้ Repository แทน DatabaseHelper โดยตรง
   bool _isInitialized = false;
-  
-  BuyerProvider() : _databaseHelper = DatabaseHelper() {
+
+  List<Category> _categories = [];
+  List<Product> _allProducts = [];
+  List<Product> _popularProducts = [];
+  List<Product> _newArrivals = [];
+  app_location.Location? _currentLocation; // ใช้ app_location.Location
+  List<Shop> _nearbyShops = [];
+  final Map<int, int> _cart = {}; // Map: productId -> quantity
+
+  BuyerProvider() : _repository = Repository() {
     // Initialize when the provider is created
-    initialize();
+    // Initialization logic moved to the `initialize` method for async operations
   }
-  
+
   bool get isInitialized => _isInitialized;
-  
+  List<Category> get categories => _categories;
+  List<Product> get allProducts => _allProducts;
+  List<Product> get popularProducts => _popularProducts;
+  List<Product> get newArrivals => _newArrivals;
+  app_location.Location? get currentLocation => _currentLocation;
+  List<Shop> get nearbyShops => _nearbyShops;
+  Map<int, int> get cart => _cart;
+  int get cartItemCount => _cart.values.fold(0, (sum, count) => sum + count);
+
   // Initialize the provider
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     try {
-      print('Initializing BuyerProvider...');
-      
-      // Initialize database
-      final db = await _databaseHelper.database;
-      print('Database initialized successfully');
-      
+      debugPrint('Initializing BuyerProvider...');
+
+      // Ensure the database is ready via Repository
+      await _repository.ensureDatabaseInitialized(); // เพิ่มเมธอดนี้ใน Repository
+
       // Load initial data
       await loadInitialData();
-      
+      await _loadUserLocation(); // โหลดตำแหน่งจาก prefs
+      await _loadCartFromPrefs(); // โหลดตะกร้าสินค้าจาก prefs
+
       _isInitialized = true;
-      print('BuyerProvider initialized successfully');
+      debugPrint('BuyerProvider initialized successfully');
     } catch (e) {
-      print('Error initializing BuyerProvider: $e');
+      debugPrint('Error initializing BuyerProvider: $e');
+      // Handle initialization errors, e.g., show a message to the user
       rethrow;
-    }
-  }
-  
-  // Current selected location
-  Province? _selectedProvince;
-  District? _selectedDistrict;
-  
-  // Current selected category
-  ProductCategory? _selectedCategory;
-  
-  // Current view mode (products or shops)
-  String _viewMode = 'products';
-  bool _isGridView = true;
-  
-  // Search query
-  String _searchQuery = '';
-  
-  // Cart items
-  final List<Map<String, dynamic>> _cartItems = [];
-  
-  // Favorites
-  final List<String> _favoriteShopIds = [];
-  
-  // Data lists
-  final List<Product> _products = [];
-  final List<Shop> _shops = [];
-  final List<ProductCategory> _categories = [];
-  final List<UserAddress> _addresses = [];
-  final List<Province> _provinces = [];
-  bool _isLoading = false;
-  bool _isLoadingMore = false;
-  int _currentPage = 1;
-  final int _itemsPerPage = 10;
-  
-  // Current user
-  User? _currentUser;
-  
-  // Getters
-  Province? get selectedProvince => _selectedProvince;
-  District? get selectedDistrict => _selectedDistrict;
-  ProductCategory? get selectedCategory => _selectedCategory;
-  bool get isGridView => _isGridView;
-  String get viewMode => _viewMode;
-  bool get isLoading => _isLoading;
-  bool get isLoadingMore => _isLoadingMore;
-  String get searchQuery => _searchQuery;
-  List<Map<String, dynamic>> get cartItems => _cartItems;
-  List<String> get favoriteShopIds => _favoriteShopIds;
-  List<Product> get products => _products;
-  List<Shop> get shops => _shops;
-  List<Shop> get nearbyShops => _shops.take(4).toList(); // Get first 4 shops as nearby
-  List<ProductCategory> get categories => _categories;
-  
-  // Check if a shop is in favorites
-  bool isShopFavorite(String shopId) => _favoriteShopIds.contains(shopId);
-  
-  // Get total items in cart
-  int get cartItemCount => _cartItems.fold(0, (sum, item) => sum + (item['quantity'] as int));
-  
-  // Get cart total amount
-  double get cartTotalAmount {
-    return _cartItems.fold(0.0, (sum, item) {
-      final product = item['product'] as Product;
-      final quantity = item['quantity'] as int;
-      return sum + (product.finalPrice * quantity);
-    });
-  }
-  
-  // Set selected province
-  void setSelectedProvince(Province? province) {
-    _selectedProvince = province;
-    _selectedDistrict = null; // Reset district when province changes
-    notifyListeners();
-    
-    // Load shops and products for the selected location
-    if (province != null) {
-      loadShopsAndProducts();
-    }
-  }
-  
-  // Set selected district
-  void setSelectedDistrict(District? district) {
-    _selectedDistrict = district;
-    notifyListeners();
-    
-    // Reload shops and products with the new district filter
-    if (_selectedProvince != null) {
-      loadShopsAndProducts();
-    }
-  }
-  
-  // Set selected category
-  void setSelectedCategory(ProductCategory? category) {
-    _selectedCategory = category;
-    notifyListeners();
-    
-    // Filter products by the selected category
-    filterProducts();
-  }
-  
-  // Set search query
-  void setSearchQuery(String query) {
-    _searchQuery = query;
-    notifyListeners();
-    
-    // Filter products based on search query
-    filterProducts();
-  }
-  
-  // Load initial data
-  Future<void> loadInitialData() async {
-    _isLoading = true;
-    notifyListeners();
-    
-    try {
-      print('Loading initial data...');
-      
-      // Reset data
-      _products.clear();
-      _shops.clear();
-      _categories.clear();
-      _addresses.clear();
-      _provinces.clear();
-      _currentPage = 1;
-      
-      // Load data from database
-      print('Loading categories...');
-      await _loadCategories();
-      print('Categories loaded: ${_categories.length}');
-      
-      print('Loading products...');
-      await _loadProducts();
-      print('Products loaded: ${_products.length}');
-      
-      print('Loading shops...');
-      await _loadShops();
-      print('Shops loaded: ${_shops.length}');
-      
-      // Load provinces
-      await _loadProvinces();
-      
-      // Only load user addresses if we have a user
-      if (_currentUser != null) {
-        print('Loading user addresses...');
-        await _loadUserAddresses();
-        print('User addresses loaded: ${_addresses.length}');
-      }
-      
-      // Set default province if not set
-      if (_selectedProvince == null && _provinces.isNotEmpty) {
-        _selectedProvince = _provinces.first;
-      }
-      
-      _isLoading = false;
-      notifyListeners();
-      
-      print('Initial data loaded successfully');
-    } catch (e) {
-      _isLoading = false;
-      notifyListeners();
-      print('Error in loadInitialData: $e');
-      rethrow;
-    }
-  }
-  
-  // Load provinces from database or API
-  Future<void> _loadProvinces() async {
-    try {
-      final db = await _databaseHelper.database;
-      
-      // Check if provinces table exists
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='provinces'"
-      );
-      
-      if (tables.isEmpty) {
-        // Create provinces table if it doesn't exist
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS provinces (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            region TEXT,
-            imageUrl TEXT
-          )
-        ''');
-        
-        // Insert default provinces if table was just created
-        await _insertDefaultProvinces(db);
-      }
-      
-      // Load provinces from database
-      final List<Map<String, dynamic>> provinceMaps = await db.query('provinces');
-      
-      // Clear existing provinces and add loaded ones
-      _provinces.clear();
-      _provinces.addAll(provinceMaps.map((map) => Province.fromMap(map)));
-      
-      print('Loaded ${_provinces.length} provinces');
-    } catch (e) {
-      print('Error loading provinces: $e');
-      rethrow;
-    }
-  }
-  
-  // Insert default provinces into the database
-  Future<void> _insertDefaultProvinces(Database db) async {
-    final defaultProvinces = [
-      {'id': 1, 'name': 'กรุงเทพมหานคร', 'region': 'กลาง'},
-      {'id': 2, 'name': 'สมุทรปราการ', 'region': 'กลาง'},
-      {'id': 3, 'name': 'นนทบุรี', 'region': 'กลาง'},
-      {'id': 4, 'name': 'ปทุมธานี', 'region': 'กลาง'},
-      {'id': 5, 'name': 'พระนครศรีอยุธยา', 'region': 'กลาง'},
-      {'id': 6, 'name': 'อ่างทอง', 'region': 'กลาง'},
-      {'id': 7, 'name': 'ลพบุรี', 'region': 'กลาง'},
-      {'id': 8, 'name': 'สิงห์บุรี', 'region': 'กลาง'},
-      {'id': 9, 'name': 'ชัยนาท', 'region': 'กลาง'},
-      {'id': 10, 'name': 'สระบุรี', 'region': 'กลาง'},
-      // Add more provinces as needed
-    ];
-    
-    try {
-      final batch = db.batch();
-      
-      for (final province in defaultProvinces) {
-        batch.insert('provinces', province);
-      }
-      
-      await batch.commit(noResult: true);
-      print('Inserted ${defaultProvinces.length} default provinces');
-    } catch (e) {
-      print('Error inserting default provinces: $e');
-      rethrow;
-    }
-  }
-  
-  // Load more data for pagination
-  Future<void> loadMoreData() async {
-    if (_isLoadingMore) return;
-    
-    _isLoadingMore = true;
-    notifyListeners();
-    
-    try {
-      _currentPage++;
-      await loadShopsAndProducts(loadMore: true);
-    } catch (e) {
-      print('Error loading more data: $e');
-      _currentPage--; // Revert page on error
     } finally {
-      _isLoadingMore = false;
       notifyListeners();
     }
   }
-  
-  // Load categories
-  Future<void> _loadCategories() async {
+
+  // Load initial data like categories, all products, etc.
+  Future<void> loadInitialData() async {
     try {
-      final db = await _databaseHelper.database;
-      
-      // Check if categories table exists
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='categories'"
-      );
-      
-      if (tables.isEmpty) {
-        print('Categories table does not exist yet');
-        return;
-      }
-      
-      final categories = await db.query('categories');
-      
-      _categories.clear();
-      for (var category in categories) {
-        try {
-          _categories.add(ProductCategory.fromMap(category));
-        } catch (e) {
-          print('Error parsing category: $e');
-        }
-      }
-      
-      // If no categories, add some default ones
-      if (_categories.isEmpty) {
-        print('No categories found, adding default categories');
-        await _addDefaultCategories();
-        // Reload categories
-        await _loadCategories();
-      }
-      
-      notifyListeners();
+      _categories = (await _repository.getAllCategories()).cast<Category>();
+      _allProducts = (await _repository.getAllProducts()).cast<Product>();
+      _popularProducts = await getPopularProducts(); // ดึงข้อมูลสินค้าแนะนำ
+      _newArrivals = await getNewArrivals(); // ดึงข้อมูลสินค้ามาใหม่
+      debugPrint('Initial data loaded: ${categories.length} categories, ${allProducts.length} products');
     } catch (e) {
-      print('Error loading categories: $e');
+      debugPrint('Error loading initial data: $e');
     }
-  }
-  
-  // Add default categories
-  Future<void> _addDefaultCategories() async {
-    try {
-      final db = await _databaseHelper.database;
-      
-      final defaultCategories = [
-        {'name': 'อาหารสด', 'icon': '🍜'},
-        {'name': 'เครื่องดื่ม', 'icon': '☕'},
-        {'name': 'ของใช้ในบ้าน', 'icon': '🏠'},
-        {'name': 'เครื่องปรุง', 'icon': '🧂'},
-        {'name': 'ขนมขบเคี้ยว', 'icon': '🍿'},
-      ];
-      
-      for (var category in defaultCategories) {
-        await db.insert('categories', {
-          'name': category['name'],
-          'icon': category['icon'],
-          'isActive': 1,
-        });
-      }
-    } catch (e) {
-      print('Error adding default categories: $e');
-    }
-  }
-  
-  // Load products
-  Future<void> _loadProducts() async {
-    try {
-      final db = await _databaseHelper.database;
-      
-      // Check if products table exists
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='products'"
-      );
-      
-      if (tables.isEmpty) {
-        print('Products table does not exist yet');
-        return;
-      }
-      
-      final products = await db.query('products');
-      
-      _products.clear();
-      for (var product in products) {
-        try {
-          _products.add(Product.fromMap(product));
-        } catch (e) {
-          print('Error parsing product: $e');
-        }
-      }
-      
-      notifyListeners();
-    } catch (e) {
-      print('Error loading products: $e');
-    }
-  }
-  
-  // Load shops
-  Future<void> _loadShops() async {
-    try {
-      final db = await _databaseHelper.database;
-      
-      // Check if shops table exists
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='shops'"
-      );
-      
-      if (tables.isEmpty) {
-        print('Shops table does not exist yet');
-        return;
-      }
-      
-      final shops = await db.query('shops');
-      
-      _shops.clear();
-      for (var shopMap in shops) {
-        try {
-          _shops.add(Shop.fromMap(shopMap));
-        } catch (e) {
-          print('Error parsing shop: $e');
-        }
-      }
-      
-      // If no shops, add a default one for testing
-      if (_shops.isEmpty) {
-        print('No shops found, adding a default shop');
-        await _addDefaultShop();
-        // Reload shops
-        await _loadShops();
-      }
-      
-      notifyListeners();
-    } catch (e) {
-      print('Error loading shops: $e');
-    }
-  }
-  
-  // Add a default shop for testing
-  Future<void> _addDefaultShop() async {
-    try {
-      final db = await _databaseHelper.database;
-      
-      // First, check if we have a user to be the shop owner
-      final users = await db.query('users', limit: 1);
-      if (users.isEmpty) {
-        print('No users found, cannot add default shop');
-        return;
-      }
-      
-      final userId = users.first['id'];
-      
-      await db.insert('shops', {
-        'name': 'ร้านค้าตัวอย่าง',
-        'description': 'นี่คือร้านค้าตัวอย่างสำหรับทดสอบระบบ',
-        'address': '123 ถนนตัวอย่าง',
-        'province': 'กรุงเทพมหานคร',
-        'district': 'บางรัก',
-        'subdistrict': 'สีลม',
-        'postalCode': '10500',
-        'phone': '0812345678',
-        'email': 'example@shop.com',
-        'logo': 'assets/images/shop_logo.png',
-        'coverImage': 'assets/images/shop_cover.jpg',
-        'isOpen': 1,
-        'isVerified': 1,
-        'rating': 4.5,
-        'totalRatings': 10,
-        'sellerId': userId,
-        'createdAt': DateTime.now().toIso8601String(),
-        'updatedAt': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      print('Error adding default shop: $e');
-    }
-  }
-  
-  // Load user addresses
-  Future<void> _loadUserAddresses() async {
-    if (_currentUser == null) return;
-    
-    try {
-      final db = await _databaseHelper.database;
-      
-      // Check if user_addresses table exists
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='user_addresses'"
-      );
-      
-      if (tables.isEmpty) {
-        print('User addresses table does not exist yet');
-        return;
-      }
-      
-      final addresses = await db.query(
-        'user_addresses',
-        where: 'userId = ?',
-        whereArgs: [_currentUser?.id],
-        orderBy: 'isDefault DESC, createdAt DESC',
-      );
-      
-      _addresses.clear();
-      for (var address in addresses) {
-        try {
-          _addresses.add(UserAddress.fromMap(address));
-        } catch (e) {
-          print('Error parsing address: $e');
-        }
-      }
-      
-      notifyListeners();
-    } catch (e) {
-      print('Error loading user addresses: $e');
-    }
-  }
-  
-  // Load shops and products for the current location
-  Future<void> loadShopsAndProducts({bool loadMore = false}) async {
-    if (!loadMore) {
-      _currentPage = 1;
-      _products.clear();
-      _shops.clear();
-    }
-    
-    try {
-      // In a real app, you would fetch shops and products from your database/API
-      // based on the selected province/district and pagination
-      
-      // This is a temporary solution with mock data
-      if (!loadMore) {
-        // Mock shops data
-        _shops.addAll(List.generate(10, (index) => Shop(
-          id: 'shop_$index',
-          sellerId: 'seller_$index',  // Added required sellerId
-          name: 'ร้านค้าตัวอย่าง ${index + 1}',
-          description: 'คำอธิบายร้านค้าตัวอย่าง ${index + 1}',
-          address: 'ที่อยู่ตัวอย่าง',
-          province: _selectedProvince?.name ?? 'จังหวัด',
-          district: _selectedDistrict?.name ?? 'อำเภอ',
-          latitude: 13.7563 + (index * 0.01),
-          longitude: 100.5018 + (index * 0.01),
-          phone: '0812345678',
-          email: 'shop$index@example.com',
-          logo: 'https://via.placeholder.com/150',
-          coverImage: 'https://via.placeholder.com/800x300',
-          isOpen: true,
-          isVerified: index % 2 == 0,
-          rating: 4.0 + (index * 0.2),
-          totalRatings: 10 + index,
-        )));
-        
-        // Mock products data
-        _products.addAll(List.generate(20, (index) => Product(
-          id: 'product_$index',
-          shopId: 'shop_${index % 5}',
-          sellerId: 'seller_${index % 5}',
-          name: 'สินค้าตัวอย่าง ${index + 1}',
-          description: 'คำอธิบายสินค้าตัวอย่าง ${index + 1}',
-          price: 100.0 + (index * 10),
-          originalPrice: 150.0 + (index * 10),
-          discount: index % 3 == 0 ? 10.0 : 0.0,
-          stock: 100,
-          categoryId: _categories[index % _categories.length].id,
-          subCategoryId: 'sub_${index % 3 + 1}',
-          isAvailable: true,
-          isFeatured: index % 5 == 0,
-          images: ['https://via.placeholder.com/300'],
-          viewCount: 100 + index,
-          soldCount: 10 + index,
-          rating: 4.0 + (index * 0.1),
-          totalRatings: 5 + index,
-        )));
-      }
-      
-      // Apply filters
-      filterProducts();
-      
-    } catch (e) {
-      print('Error loading shops and products: $e');
-    }
-  }
-  
-  // Toggle between grid and list view
-  void toggleViewMode() {
-    _isGridView = !_isGridView;
     notifyListeners();
   }
-  
-  // Set the current view mode (products or shops)
-  void setViewMode(String mode) {
-    _isGridView = mode == 'products';
+
+  // User location management
+  Future<void> _loadUserLocation() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lat = prefs.getDouble('current_location_lat');
+    final lng = prefs.getDouble('current_location_lng');
+    final address = prefs.getString('current_location_address');
+
+    if (lat != null && lng != null) {
+      _currentLocation = app_location.Location(
+        latitude: lat,
+        longitude: lng,
+        address: address, timestamp: null,
+      );
+      // Optional: Load nearby shops immediately after location is loaded
+      // if (_currentLocation != null) {
+      //   await getNearbyShops(LatLng(_currentLocation!.latitude, _currentLocation!.longitude));
+      // }
+    }
     notifyListeners();
   }
-  
-  // Filter products based on search query and selected category
-  void filterProducts() {
-    // In a real app, you would apply filters to your database query
-    // based on selectedCategory and searchQuery
-    notifyListeners();
-  }
-  
-  // Add product to cart
-  void addToCart(Product product, {int quantity = 1}) {
-    final existingIndex = _cartItems.indexWhere((item) {
-      return (item['product'] as Product).id == product.id;
-    });
-    
-    if (existingIndex >= 0) {
-      // Update quantity if product already in cart
-      _cartItems[existingIndex]['quantity'] += quantity;
+
+  Future<void> updateUserLocation(app_location.Location newLocation) async {
+    _currentLocation = newLocation;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('current_location_lat', newLocation.latitude);
+    await prefs.setDouble('current_location_lng', newLocation.longitude);
+    if (newLocation.address != null) {
+      await prefs.setString('current_location_address', newLocation.address!);
     } else {
-      // Add new item to cart
-      _cartItems.add({
-        'product': product,
-        'quantity': quantity,
-        'addedAt': DateTime.now(),
-      });
+      await prefs.remove('current_location_address');
     }
-    
+    await getNearbyShops(LatLng(newLocation.latitude, newLocation.longitude)); // อัปเดตร้านค้าใกล้เคียง
     notifyListeners();
   }
-  
-  // Remove product from cart
-  void removeFromCart(Product product) {
-    _cartItems.removeWhere((item) => (item['product'] as Product).id == product.id);
-    notifyListeners();
-  }
-  
-  // Update product quantity in cart
-  void updateCartItemQuantity(Product product, int quantity) {
-    final index = _cartItems.indexWhere((item) {
-      return (item['product'] as Product).id == product.id;
-    });
-    
-    if (index >= 0) {
-      if (quantity <= 0) {
-        _cartItems.removeAt(index);
-      } else {
-        _cartItems[index]['quantity'] = quantity;
-      }
-      notifyListeners();
+
+  // Product and Category Operations
+  Future<List<Product>> getProductsByCategory(int categoryId) async {
+    try {
+      return (await _repository.getProductsByCategory(categoryId)).cast<Product>();
+    } catch (e) {
+      debugPrint('Error getting products by category: $e');
+      return [];
     }
   }
-  
-  // Clear cart
-  void clearCart() {
-    _cartItems.clear();
-    notifyListeners();
-  }
-  
-  // Toggle shop favorite status
-  void toggleFavoriteShop(String shopId) {
-    if (_favoriteShopIds.contains(shopId)) {
-      _favoriteShopIds.remove(shopId);
-    } else {
-      _favoriteShopIds.add(shopId);
+
+  Future<List<Product>> searchProducts(String query) async {
+    try {
+      return (await _repository.searchProducts(query)).cast<Product>();
+    } catch (e) {
+      debugPrint('Error searching products: $e');
+      return [];
     }
-    notifyListeners();
   }
-  
-  // Get recommended products (for home screen)
-  Future<List<Product>> getRecommendedProducts() async {
-    // TODO: Implement logic to get recommended products
-    // This could be based on user's location, past purchases, etc.
-    return [];
+
+  Future<Product?> getProductDetails(int productId) async {
+    try {
+      return await _repository.getProduct(productId);
+    } catch (e) {
+      debugPrint('Error getting product details: $e');
+      return null;
+    }
   }
-  
-  // Get popular shops (for home screen)
-  Future<List<Shop>> getPopularShops() async {
-    // TODO: Implement logic to get popular shops
-    // This could be based on ratings, number of sales, etc.
-    return [];
+
+  Future<List<Product>> getRelatedProducts(int productId) async {
+    try {
+      // For simplicity, just return some products.
+      // A more complex implementation would involve product tags, categories, etc.
+      final allProducts = await _repository.getAllProducts();
+      return allProducts.where((p) => p.id != productId).take(5).toList().cast<Product>();
+    } catch (e) {
+      debugPrint('Error getting related products: $e');
+      return [];
+    }
   }
-  
-  // Get products by category
-  Future<List<Product>> getProductsByCategory(String categoryId, {int limit = 20}) async {
-    // TODO: Implement logic to get products by category
-    return [];
-  }
-  
-  // Get shops by category
-  Future<List<Shop>> getShopsByCategory(String categoryId, {int limit = 20}) async {
-    // TODO: Implement logic to get shops by category
-    return [];
-  }
-  
-  // Search products
-  Future<List<Product>> searchProducts(String query, {String? categoryId}) async {
-    // TODO: Implement product search logic
-    return [];
-  }
-  
-  // Search shops
-  Future<List<Shop>> searchShops(String query, {String? categoryId}) async {
-    // TODO: Implement shop search logic
-    return [];
-  }
-  
-  // Get shop details
-  Future<Shop?> getShopDetails(String shopId) async {
-    // TODO: Implement logic to get shop details
-    return null;
-  }
-  
-  // Get shop products
-  Future<List<Product>> getShopProducts(String shopId, {String? categoryId}) async {
-    // TODO: Implement logic to get products by shop
-    return [];
-  }
-  
-  // Get product details
-  Future<Product?> getProductDetails(String productId) async {
-    // TODO: Implement logic to get product details
-    return null;
-  }
-  
-  // Get related products
-  Future<List<Product>> getRelatedProducts(String productId) async {
-    // TODO: Implement logic to get related products
-    return [];
-  }
-  
-  // Get nearby shops based on current location
-  Future<List<Shop>> getNearbyShops(LatLng location, {double radiusInKm = 5.0}) async {
-    // TODO: Implement logic to get nearby shops
-    return [];
-  }
-  
-  // Get popular products
+
   Future<List<Product>> getPopularProducts({int limit = 20}) async {
-    // TODO: Implement logic to get popular products
-    return [];
+    try {
+      // Example: Products with highest order counts or views
+      // This would require a 'views' or 'order_count' field in Product model or separate tracking.
+      // For now, let's just return a subset of all products.
+      final all = await _repository.getAllProducts();
+      return all.take(limit).toList().cast<Product>(); // Dummy implementation
+    } catch (e) {
+      debugPrint('Error getting popular products: $e');
+      return [];
+    }
   }
-  
-  // Get new arrivals
+
   Future<List<Product>> getNewArrivals({int limit = 20}) async {
-    // TODO: Implement logic to get new arrivals
-    return [];
+    try {
+      // Example: Products ordered by creation date
+      final newProducts = await _repository.getNewArrivalsProducts(limit: limit);
+      return newProducts.cast<Product>();
+    } catch (e) {
+      debugPrint('Error getting new arrivals: $e');
+      return [];
+    }
   }
-  
-  // Get deals and discounts
-  Future<List<Product>> getDealsAndDiscounts({int limit = 20}) async {
-    // TODO: Implement logic to get products with discounts
-    return [];
+
+  // Shop Operations
+  Future<List<Shop>> searchShops(String query) async {
+    try {
+      return (await _repository.searchShops(query)).cast<Shop>();
+    } catch (e) {
+      debugPrint('Error searching shops: $e');
+      return [];
+    }
+  }
+
+  Future<Shop?> getShopDetails(int shopId) async {
+    try {
+      return await _repository.getShop(shopId);
+    } catch (e) {
+      debugPrint('Error getting shop details: $e');
+      return null;
+    }
+  }
+
+  Future<List<Product>> getShopProducts(int shopId, {int? categoryId}) async {
+    try {
+      return (await _repository.getProductsByShop(shopId, categoryId: categoryId)).cast<Product>();
+    } catch (e) {
+      debugPrint('Error getting shop products: $e');
+      return [];
+    }
+  }
+
+  Future<List<Shop>> getNearbyShops(LatLng location, {double radiusInKm = 5.0}) async {
+    try {
+      _nearbyShops = (await _repository.getNearbyShops(
+        location.latitude,
+        location.longitude,
+        radiusInKm: radiusInKm,
+      )).cast<Shop>();
+      notifyListeners();
+      return _nearbyShops;
+    } catch (e) {
+      debugPrint('Error getting nearby shops: $e');
+      return [];
+    }
+  }
+
+  // Cart Management
+  Future<void> _loadCartFromPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cartJson = prefs.getString('cart');
+    if (cartJson != null) {
+      final Map<String, dynamic> decodedCart = json.decode(cartJson);
+      _cart.clear();
+      decodedCart.forEach((key, value) {
+        _cart[int.parse(key)] = value as int;
+      });
+      debugPrint('Cart loaded from preferences: $_cart');
+    }
+    notifyListeners();
+  }
+
+  Future<void> _saveCartToPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String encodedCart = json.encode(_cart.map((key, value) => MapEntry(key.toString(), value)));
+    await prefs.setString('cart', encodedCart);
+    debugPrint('Cart saved to preferences: $_cart');
+  }
+
+  void addToCart(Product product, int quantity) {
+    _cart.update(product.id!, (value) => value + quantity, ifAbsent: () => quantity);
+    _saveCartToPrefs();
+    notifyListeners();
+    debugPrint('Added ${quantity} of ${product.name} to cart. Current cart: $_cart');
+  }
+
+  void removeFromCart(int productId) {
+    if (_cart.containsKey(productId)) {
+      if (_cart[productId]! > 1) {
+        _cart.update(productId, (value) => value - 1);
+      } else {
+        _cart.remove(productId);
+      }
+      _saveCartToPrefs();
+      notifyListeners();
+      debugPrint('Removed 1 of product ID $productId from cart. Current cart: $_cart');
+    }
+  }
+
+  void removeAllOfProductFromCart(int productId) {
+    _cart.remove(productId);
+    _saveCartToPrefs();
+    notifyListeners();
+    debugPrint('Removed all of product ID $productId from cart. Current cart: $_cart');
+  }
+
+  void clearCart() {
+    _cart.clear();
+    _saveCartToPrefs();
+    notifyListeners();
+    debugPrint('Cart cleared.');
+  }
+
+  // Order Operations (Placeholder for now)
+  Future<bool> placeOrder(int userId, String shippingAddress, List<Map<String, dynamic>> items) async {
+    // items should be [{productId: ..., quantity: ..., price: ...}, ...]
+    try {
+      double totalAmount = 0;
+      for (var item in items) {
+        totalAmount += item['quantity'] * item['price'];
+      }
+
+      final orderMap = {
+        'userId': userId,
+        'totalAmount': totalAmount,
+        'status': 'pending', // Initial status
+        'shippingAddress': shippingAddress,
+        'orderDate': DateTime.now().toIso8601String(),
+      };
+
+      final orderId = await _repository.insertOrder(orderMap);
+
+      if (orderId > 0) {
+        for (var item in items) {
+          final orderItemMap = {
+            'orderId': orderId,
+            'productId': item['productId'],
+            'quantity': item['quantity'],
+            'price': item['price'],
+          };
+          await _repository.insertOrderItem(orderItemMap);
+        }
+        clearCart(); // Clear cart after successful order
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error placing order: $e');
+      return false;
+    }
+  }
+
+  Future<List<dynamic>> getUserOrders(int userId) async {
+    try {
+      // Assuming Repository has a method to get orders with their items
+      return await _repository.getUserOrders(userId);
+    } catch (e) {
+      debugPrint('Error getting user orders: $e');
+      return [];
+    }
   }
 }

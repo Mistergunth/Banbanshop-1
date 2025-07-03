@@ -1,4 +1,5 @@
-import 'product_model.dart';
+// order_model.dart
+import 'product_model.dart'; // Ensure product_model.dart is imported
 
 class Order {
   final int? id;
@@ -6,7 +7,7 @@ class Order {
   final double totalAmount;
   final String status;
   final String shippingAddress;
-  final String orderDate;
+  final String orderDate; // Stored as ISO8601 String
   final List<OrderItem>? items;
 
   Order({
@@ -34,14 +35,14 @@ class Order {
   // Create an Order from a Map
   factory Order.fromMap(Map<String, dynamic> map) {
     return Order(
-      id: map['id'],
-      userId: map['userId'],
-      totalAmount: map['totalAmount'] is int 
-          ? (map['totalAmount'] as int).toDouble() 
-          : map['totalAmount'],
-      status: map['status'],
-      shippingAddress: map['shippingAddress'],
-      orderDate: map['orderDate'],
+      id: map['id'] as int?,
+      userId: map['userId'] as int,
+      totalAmount: map['totalAmount'] is int
+          ? (map['totalAmount'] as int).toDouble()
+          : map['totalAmount'] as double,
+      status: map['status'] as String,
+      shippingAddress: map['shippingAddress'] as String,
+      orderDate: map['orderDate'] as String,
     );
   }
 }
@@ -52,7 +53,7 @@ class OrderItem {
   final int productId;
   final int quantity;
   final double price;
-  final Product? product;
+  final Product? product; // Product details can be included when fetching order items
 
   OrderItem({
     this.id,
@@ -77,13 +78,13 @@ class OrderItem {
   // Create an OrderItem from a Map
   factory OrderItem.fromMap(Map<String, dynamic> map) {
     return OrderItem(
-      id: map['id'],
-      orderId: map['orderId'],
-      productId: map['productId'],
-      quantity: map['quantity'],
-      price: map['price'] is int 
-          ? (map['price'] as int).toDouble() 
-          : map['price'],
+      id: map['id'] as int?,
+      orderId: map['orderId'] as int,
+      productId: map['productId'] as int,
+      quantity: map['quantity'] as int,
+      price: map['price'] as double,
+      // product field is typically populated through a join query in the repository
+      product: null, // Will be populated separately if needed
     );
   }
 }

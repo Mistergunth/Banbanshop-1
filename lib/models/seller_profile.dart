@@ -1,5 +1,8 @@
+// seller_profile.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class SellerProfile {
-  final String id;
+  final String id; // This is assumed to be Firebase User UID (String)
   final String fullName;
   final String email;
   final String? phoneNumber;
@@ -35,35 +38,36 @@ class SellerProfile {
     this.bannerUrl,
     this.profileImageUrl,
     this.status = 'pending',
-    this.createdAt,
-    this.updatedAt,
-  });
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
 
-  // Create a SellerProfile from a map (from database)
+  // Create a SellerProfile from a map (from Firestore)
   factory SellerProfile.fromJson(Map<String, dynamic> json) {
     return SellerProfile(
-      id: json['id']?.toString() ?? '',
-      fullName: json['fullName']?.toString() ?? '',
-      email: json['email']?.toString() ?? '',
-      phoneNumber: json['phoneNumber']?.toString(),
-      shopName: json['shopName']?.toString(),
-      address: json['address']?.toString(),
-      province: json['province']?.toString(),
-      district: json['district']?.toString(),
-      subDistrict: json['subDistrict']?.toString(),
-      postalCode: json['postalCode']?.toString(),
-      taxId: json['taxId']?.toString(),
-      idCardImageUrl: json['idCardImageUrl']?.toString(),
-      logoUrl: json['logoUrl']?.toString(),
-      bannerUrl: json['bannerUrl']?.toString(),
-      profileImageUrl: json['profileImageUrl']?.toString(),
-      status: json['status']?.toString() ?? 'pending',
-      createdAt: json['createdAt']?.toDate(),
-      updatedAt: json['updatedAt']?.toDate(),
+      id: json['id'] as String,
+      fullName: json['fullName'] as String,
+      email: json['email'] as String,
+      phoneNumber: json['phoneNumber'] as String?,
+      shopName: json['shopName'] as String?,
+      address: json['address'] as String?,
+      province: json['province'] as String?,
+      district: json['district'] as String?,
+      subDistrict: json['subDistrict'] as String?,
+      postalCode: json['postalCode'] as String?,
+      taxId: json['taxId'] as String?,
+      idCardImageUrl: json['idCardImageUrl'] as String?,
+      logoUrl: json['logoUrl'] as String?,
+      bannerUrl: json['bannerUrl'] as String?,
+      profileImageUrl: json['profileImageUrl'] as String?,
+      status: json['status'] as String?,
+      createdAt: (json['createdAt'] as Timestamp?)?.toDate(),
+      updatedAt: (json['updatedAt'] as Timestamp?)?.toDate(),
     );
   }
 
-  // Convert a SellerProfile to a map (for database)
+  // Convert a SellerProfile to a map (for Firestore)
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -82,57 +86,19 @@ class SellerProfile {
       'bannerUrl': bannerUrl,
       'profileImageUrl': profileImageUrl,
       'status': status,
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
+      'createdAt': Timestamp.fromDate(createdAt!),
+      'updatedAt': Timestamp.fromDate(updatedAt!),
     };
   }
 
-  // Create a copy of the SellerProfile with some updated fields
-  SellerProfile copyWithFull({
-    String? fullName,
-    String? email,
-    String? phoneNumber,
-    String? shopName,
-    String? address,
-    String? province,
-    String? district,
-    String? subDistrict,
-    String? postalCode,
-    String? taxId,
-    String? idCardImageUrl,
-    String? logoUrl,
-    String? bannerUrl,
-    String? profileImageUrl,
-    String? status,
-  }) {
-    return SellerProfile(
-      id: id,
-      fullName: fullName ?? this.fullName,
-      email: email ?? this.email,
-      phoneNumber: phoneNumber ?? this.phoneNumber,
-      shopName: shopName ?? this.shopName,
-      address: address ?? this.address,
-      province: province ?? this.province,
-      district: district ?? this.district,
-      subDistrict: subDistrict ?? this.subDistrict,
-      postalCode: postalCode ?? this.postalCode,
-      taxId: taxId ?? this.taxId,
-      idCardImageUrl: idCardImageUrl ?? this.idCardImageUrl,
-      logoUrl: logoUrl ?? this.logoUrl,
-      bannerUrl: bannerUrl ?? this.bannerUrl,
-      profileImageUrl: profileImageUrl ?? this.profileImageUrl,
-      status: status ?? this.status,
-      createdAt: createdAt,
-      updatedAt: updatedAt,
-    );
-  }
-
-  // Check if the seller profile is complete for registration
+  // Check if seller profile is complete
   bool get isProfileComplete {
     return fullName.isNotEmpty &&
         email.isNotEmpty &&
         phoneNumber != null &&
         phoneNumber!.isNotEmpty &&
+        shopName != null &&
+        shopName!.isNotEmpty &&
         address != null &&
         address!.isNotEmpty &&
         province != null &&
@@ -171,6 +137,7 @@ class SellerProfile {
     String? logoUrl,
     String? bannerUrl,
     String? profileImageUrl,
+    String? status,
   }) {
     return SellerProfile(
       id: id ?? this.id,
@@ -187,6 +154,9 @@ class SellerProfile {
       logoUrl: logoUrl ?? this.logoUrl,
       bannerUrl: bannerUrl ?? this.bannerUrl,
       profileImageUrl: profileImageUrl ?? this.profileImageUrl,
+      status: status ?? this.status,
+      createdAt: createdAt, // Keep original createdAt
+      updatedAt: updatedAt, // Keep original updatedAt
     );
   }
 }

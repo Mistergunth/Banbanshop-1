@@ -1,135 +1,115 @@
-class UserAddress {
+// user_model.dart
+enum UserRole {
+  customer,
+  seller,
+  admin
+}
+
+class User {
   final int? id;
-  final int userId;
-  final String recipientName;
-  final String phoneNumber;
-  final String addressLine1;
-  final String? addressLine2;
-  final String province;
-  final String district;
-  final String subdistrict;
-  final String postalCode;
-  final bool isDefault;
-  final double? latitude;
-  final double? longitude;
-  final String? notes;
+  final String name;
+  final String email;
+  final String phone;
+  final String password;
+  final String? address;
+  final String? profileImage;
+  final String? idCardImage; // For seller verification
+  final UserRole role;
+  final bool isActive;
   final String? createdAt;
   final String? updatedAt;
 
-  UserAddress({
+  User({
     this.id,
-    required this.userId,
-    required this.recipientName,
-    required this.phoneNumber,
-    required this.addressLine1,
-    this.addressLine2,
-    required this.province,
-    required this.district,
-    required this.subdistrict,
-    required this.postalCode,
-    this.isDefault = false,
-    this.latitude,
-    this.longitude,
-    this.notes,
+    required this.name,
+    required this.email,
+    required this.phone,
+    required this.password,
+    this.address,
+    this.profileImage,
+    this.idCardImage,
+    this.role = UserRole.customer, // Default role is customer
+    this.isActive = true,
     this.createdAt,
     this.updatedAt,
   });
 
-  // Convert UserAddress to a Map
+  // Convert a User into a Map
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'userId': userId,
-      'recipientName': recipientName,
-      'phoneNumber': phoneNumber,
-      'addressLine1': addressLine1,
-      'addressLine2': addressLine2,
-      'province': province,
-      'district': district,
-      'subdistrict': subdistrict,
-      'postalCode': postalCode,
-      'isDefault': isDefault ? 1 : 0,
-      'latitude': latitude,
-      'longitude': longitude,
-      'notes': notes,
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'password': password,
+      'address': address,
+      'profileImage': profileImage,
+      'idCardImage': idCardImage,
+      'role': role.toString().split('.').last, // Convert enum to string
+      'isActive': isActive ? 1 : 0,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
     };
   }
 
-  // Create a UserAddress from a Map
-  factory UserAddress.fromMap(Map<String, dynamic> map) {
-    return UserAddress(
-      id: map['id'],
-      userId: map['userId'],
-      recipientName: map['recipientName'] ?? '',
-      phoneNumber: map['phoneNumber'] ?? '',
-      addressLine1: map['addressLine1'] ?? '',
-      addressLine2: map['addressLine2'],
-      province: map['province'] ?? '',
-      district: map['district'] ?? '',
-      subdistrict: map['subdistrict'] ?? '',
-      postalCode: map['postalCode'] ?? '',
-      isDefault: map['isDefault'] == 1,
-      latitude: map['latitude']?.toDouble(),
-      longitude: map['longitude']?.toDouble(),
-      notes: map['notes'],
-      createdAt: map['createdAt'],
-      updatedAt: map['updatedAt'],
+  // Create a User from a Map
+  factory User.fromMap(Map<String, dynamic> map) {
+    return User(
+      id: map['id'] as int?,
+      name: map['name'] as String,
+      email: map['email'] as String,
+      phone: map['phone'] as String,
+      password: map['password'] as String,
+      address: map['address'] as String?,
+      profileImage: map['profileImage'] as String?,
+      idCardImage: map['idCardImage'] as String?,
+      role: UserRole.values.firstWhere(
+        (e) => e.toString().split('.').last == map['role'],
+        orElse: () => UserRole.customer,
+      ),
+      isActive: (map['isActive'] as int) == 1,
+      createdAt: map['createdAt'] as String?,
+      updatedAt: map['updatedAt'] as String?,
     );
   }
 
-  // Create a copy of the address with updated fields
-  UserAddress copyWith({
+  // Create a copy of the user with updated fields
+  User copyWith({
     int? id,
-    int? userId,
-    String? recipientName,
-    String? phoneNumber,
-    String? addressLine1,
-    String? addressLine2,
-    String? province,
-    String? district,
-    String? subdistrict,
-    String? postalCode,
-    bool? isDefault,
-    double? latitude,
-    double? longitude,
-    String? notes,
+    String? name,
+    String? email,
+    String? phone,
+    String? password,
+    String? address,
+    String? profileImage,
+    String? idCardImage,
+    UserRole? role,
+    bool? isActive,
     String? createdAt,
     String? updatedAt,
   }) {
-    return UserAddress(
+    return User(
       id: id ?? this.id,
-      userId: userId ?? this.userId,
-      recipientName: recipientName ?? this.recipientName,
-      phoneNumber: phoneNumber ?? this.phoneNumber,
-      addressLine1: addressLine1 ?? this.addressLine1,
-      addressLine2: addressLine2 ?? this.addressLine2,
-      province: province ?? this.province,
-      district: district ?? this.district,
-      subdistrict: subdistrict ?? this.subdistrict,
-      postalCode: postalCode ?? this.postalCode,
-      isDefault: isDefault ?? this.isDefault,
-      latitude: latitude ?? this.latitude,
-      longitude: longitude ?? this.longitude,
-      notes: notes ?? this.notes,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      phone: phone ?? this.phone,
+      password: password ?? this.password,
+      address: address ?? this.address,
+      profileImage: profileImage ?? this.profileImage,
+      idCardImage: idCardImage ?? this.idCardImage,
+      role: role ?? this.role,
+      isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
-  // Format the full address
-  String get fullAddress {
-    final parts = [
-      addressLine1,
-      addressLine2,
-      'ตำบล/แขวง $subdistrict',
-      'อำเภอ/เขต $district',
-      'จังหวัด $province',
-      'รหัสไปรษณีย์ $postalCode',
-    ];
-    
-    // Remove any null or empty parts
-    return parts.where((part) => part != null && part.isNotEmpty).join('\n');
-  }
+  // Check if user is a buyer
+  bool get isBuyer => role == UserRole.customer;
+
+  // Check if user is a seller
+  bool get isSeller => role == UserRole.seller;
+
+  // Check if user is an admin
+  bool get isAdmin => role == UserRole.admin;
 }
